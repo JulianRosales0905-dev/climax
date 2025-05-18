@@ -33,7 +33,12 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
     const currentUnitPrice = sale.totalPrice / sale.quantity;
     setIsFriendPrice(currentUnitPrice !== product.price);
     setFriendPrice(currentUnitPrice.toString());
-  }, [sale, product.price]);
+
+    // Reset split payment amounts when total changes
+    const total = Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price);
+    setCashAmount(total.toString());
+    setNequiAmount('0');
+  }, [sale, product.price, quantity, isFriendPrice, friendPrice]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,30 +56,38 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
       const cashValue = Number(cashAmount);
       const nequiValue = Number(nequiAmount);
       
-      if (cashValue + nequiValue !== totalPrice) {
+      if (Math.abs(cashValue + nequiValue - totalPrice) > 0.01) {
         alert('La suma de los pagos debe ser igual al total de la venta.');
         return;
       }
 
+      // Delete original sale
+      await onDelete(sale.id);
+
       // Create two sales for split payment
       if (cashValue > 0) {
         await onSave({
-          ...sale,
+          id: crypto.randomUUID(),
+          productId: product.id,
           quantity: quantityNum,
           totalPrice: cashValue,
           paymentMethod: 'efectivo',
           tableNumber: tableNumber || undefined,
+          date: new Date().toISOString(),
+          status: sale.status
         });
       }
 
       if (nequiValue > 0) {
         await onSave({
-          ...sale,
-          id: crypto.randomUUID(), // New ID for second payment
+          id: crypto.randomUUID(),
+          productId: product.id,
           quantity: quantityNum,
           totalPrice: nequiValue,
           paymentMethod: 'nequi',
           tableNumber: tableNumber || undefined,
+          date: new Date().toISOString(),
+          status: sale.status
         });
       }
     } else {
@@ -96,6 +109,31 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
       await onDelete(sale.id);
       onClose();
     }
+  };
+
+  const handleSplitPaymentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const isChecked = e.target.checked;
+    setIsSplitPayment(isChecked);
+    
+    const total = Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price);
+    if (isChecked) {
+      setCashAmount(total.toString());
+      setNequiAmount('0');
+    }
+  };
+
+  const handleCashAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const cashValue = Number(e.target.value);
+    const total = Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price);
+    setCashAmount(e.target.value);
+    setNequiAmount((total - cashValue).toString());
+  };
+
+  const handleNequiAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nequiValue = Number(e.target.value);
+    const total = Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price);
+    setNequiAmount(e.target.value);
+    setCashAmount((total - nequiValue).toString());
   };
 
   if (!isOpen) return null;
@@ -181,7 +219,7 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
               <input
                 type="checkbox"
                 checked={isSplitPayment}
-                onChange={(e) => setIsSplitPayment(e.target.checked)}
+                onChange={handleSplitPaymentChange}
                 className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
               />
               <span className="ml-2 text-sm text-gray-700">Dividir Pago</span>
@@ -196,8 +234,9 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                   <input
                     type="number"
                     min="0"
+                    max={totalAmount}
                     value={cashAmount}
-                    onChange={(e) => setCashAmount(e.target.value)}
+                    onChange={handleCashAmountChange}
                     className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
                   />
                 </div>
@@ -208,11 +247,15 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
                   <input
                     type="number"
                     min="0"
+                    max={totalAmount}
                     value={nequiAmount}
-                    onChange={(e) => setNequiAmount(e.target.value)}
+                    onChange={handleNequiAmountChange}
                     className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
                   />
                 </div>
+                <p className="text-sm text-gray-500">
+                  Total restante: {formatCurrency(totalAmount - Number(cashAmount) - Number(nequiAmount))}
+                </p>
               </div>
             ) : (
               <div>
