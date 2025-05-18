@@ -43,6 +43,21 @@ export const SalesClosurePreview: React.FC<SalesClosurePreviewProps> = ({
     }
   };
 
+  // Group sales by product
+  const salesByProduct = sales.reduce((acc, sale) => {
+    const key = sale.productId;
+    if (!acc[key]) {
+      acc[key] = {
+        name: getProductName(sale.productId),
+        quantity: 0,
+        total: 0,
+      };
+    }
+    acc[key].quantity += sale.quantity;
+    acc[key].total += sale.totalPrice;
+    return acc;
+  }, {} as Record<string, { name: string; quantity: number; total: number }>);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center overflow-y-auto py-4">
       <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl m-4">
@@ -108,25 +123,30 @@ export const SalesClosurePreview: React.FC<SalesClosurePreviewProps> = ({
               </ul>
             </div>
 
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cantidad</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {sales.map((sale) => (
-                    <tr key={sale.id}>
-                      <td className="px-4 py-2 text-sm text-gray-900">{getProductName(sale.productId)}</td>
-                      <td className="px-4 py-2 text-sm text-gray-900">{sale.quantity}</td>
-                      <td className="px-4 py-2 text-sm font-medium text-gray-900">{formatCurrency(sale.totalPrice)}</td>
+            <div>
+              <h4 className="font-medium mb-2">Productos Vendidos</h4>
+              <div className="max-h-64 overflow-y-auto border rounded-lg">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cantidad</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {Object.entries(salesByProduct).map(([id, data]) => (
+                      <tr key={id}>
+                        <td className="px-4 py-2 text-sm text-gray-900">{data.name}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900">{data.quantity}</td>
+                        <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                          {formatCurrency(data.total)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

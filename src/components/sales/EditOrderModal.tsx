@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Trash2 } from 'lucide-react';
 import { Sale, Product } from '../../types';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -9,6 +9,7 @@ interface EditOrderModalProps {
   sale: Sale;
   product: Product;
   onSave: (updatedSale: Sale) => Promise<void>;
+  onDelete: (saleId: string) => Promise<void>;
 }
 
 export const EditOrderModal: React.FC<EditOrderModalProps> = ({
@@ -17,15 +18,18 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
   sale,
   product,
   onSave,
+  onDelete,
 }) => {
   const [quantity, setQuantity] = useState(sale.quantity.toString());
   const [paymentMethod, setPaymentMethod] = useState(sale.paymentMethod);
   const [tableNumber, setTableNumber] = useState(sale.tableNumber || '');
   const [isFriendPrice, setIsFriendPrice] = useState(false);
   const [friendPrice, setFriendPrice] = useState(product.price.toString());
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [cashAmount, setCashAmount] = useState('0');
+  const [nequiAmount, setNequiAmount] = useState('0');
 
   useEffect(() => {
-    // Check if current price differs from product price to detect friend price
     const currentUnitPrice = sale.totalPrice / sale.quantity;
     setIsFriendPrice(currentUnitPrice !== product.price);
     setFriendPrice(currentUnitPrice.toString());
@@ -41,19 +45,62 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
     }
 
     const finalPrice = isFriendPrice ? Number(friendPrice) : product.price;
-    const updatedSale: Sale = {
-      ...sale,
-      quantity: quantityNum,
-      totalPrice: finalPrice * quantityNum,
-      paymentMethod,
-      tableNumber: tableNumber || undefined,
-    };
+    const totalPrice = finalPrice * quantityNum;
 
-    await onSave(updatedSale);
+    if (isSplitPayment) {
+      const cashValue = Number(cashAmount);
+      const nequiValue = Number(nequiAmount);
+      
+      if (cashValue + nequiValue !== totalPrice) {
+        alert('La suma de los pagos debe ser igual al total de la venta.');
+        return;
+      }
+
+      // Create two sales for split payment
+      if (cashValue > 0) {
+        await onSave({
+          ...sale,
+          quantity: quantityNum,
+          totalPrice: cashValue,
+          paymentMethod: 'efectivo',
+          tableNumber: tableNumber || undefined,
+        });
+      }
+
+      if (nequiValue > 0) {
+        await onSave({
+          ...sale,
+          id: crypto.randomUUID(), // New ID for second payment
+          quantity: quantityNum,
+          totalPrice: nequiValue,
+          paymentMethod: 'nequi',
+          tableNumber: tableNumber || undefined,
+        });
+      }
+    } else {
+      const updatedSale: Sale = {
+        ...sale,
+        quantity: quantityNum,
+        totalPrice,
+        paymentMethod,
+        tableNumber: tableNumber || undefined,
+      };
+      await onSave(updatedSale);
+    }
+    
     onClose();
   };
 
+  const handleDelete = async () => {
+    if (window.confirm('¿Está seguro de que desea eliminar este pedido?')) {
+      await onDelete(sale.id);
+      onClose();
+    }
+  };
+
   if (!isOpen) return null;
+
+  const totalAmount = Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -101,22 +148,6 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Método de Pago
-            </label>
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value as 'efectivo' | 'nequi' | 'datafono')}
-              className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
-              required
-            >
-              <option value="efectivo">Efectivo</option>
-              <option value="nequi">Nequi</option>
-              <option value="datafono">Datáfono</option>
-            </select>
-          </div>
-
           <div className="space-y-2">
             <label className="inline-flex items-center">
               <input
@@ -145,31 +176,96 @@ export const EditOrderModal: React.FC<EditOrderModalProps> = ({
             )}
           </div>
 
+          <div className="space-y-2">
+            <label className="inline-flex items-center">
+              <input
+                type="checkbox"
+                checked={isSplitPayment}
+                onChange={(e) => setIsSplitPayment(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+              />
+              <span className="ml-2 text-sm text-gray-700">Dividir Pago</span>
+            </label>
+
+            {isSplitPayment ? (
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Monto en Efectivo
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={cashAmount}
+                    onChange={(e) => setCashAmount(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Monto en Nequi
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={nequiAmount}
+                    onChange={(e) => setNequiAmount(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Método de Pago
+                </label>
+                <select
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'efectivo' | 'nequi' | 'datafono')}
+                  className="w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-sm"
+                  required
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="nequi">Nequi</option>
+                  <option value="datafono">Datáfono</option>
+                </select>
+              </div>
+            )}
+          </div>
+
           <div className="pt-4 border-t">
             <div className="flex justify-between items-baseline mb-4">
               <span className="text-sm text-gray-500">Total</span>
               <span className="text-xl font-bold text-blue-600">
-                {formatCurrency(
-                  Number(quantity) * (isFriendPrice ? Number(friendPrice) : product.price)
-                )}
+                {formatCurrency(totalAmount)}
               </span>
             </div>
 
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-between gap-3">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                onClick={handleDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
               >
-                Cancelar
+                <Trash2 size={20} />
+                <span>Eliminar</span>
               </button>
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Save size={20} />
-                <span>Guardar Cambios</span>
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Save size={20} />
+                  <span>Guardar</span>
+                </button>
+              </div>
             </div>
           </div>
         </form>
